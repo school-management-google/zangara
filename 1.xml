@@ -1,3 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Module>
+<ModulePrefs title="Resources" />
+<Content type="html"><![CDATA[
+
 <!DOCTYPE html>
 
 <html lang="en-us">
@@ -5,7 +10,7 @@
 <meta charset="utf-8"/>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-<link rel="stylesheet" href="./style.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/school-management-google/zangara@main/style.css"/>
 <!-- Yandex Games SDK removed -->
 <!-- Yandex Games SDK Fallback: sdk.js gerekli değil -->
 <script>
@@ -171,7 +176,7 @@
 </div>
 <div id="loading-cover" style="display:none;">
 <div id="unity-loading-bar">
-<div id="unity-logo"><img src="Images/logo.png"/></div>
+<div id="unity-logo"><img src="https://cdn.jsdelivr.net/gh/school-management-google/zangara@main/Images/logo.png"/></div>
 <div id="unity-progress-bar-empty" style="display: none;">
 <div id="unity-progress-bar-full"></div>
 </div>
@@ -181,17 +186,69 @@
 <!-- Additional body modules -->
 <script>
         const hideFullScreenButton = "";
-        const buildUrl = "Build";
+        const buildUrl = "https://cdn.jsdelivr.net/gh/school-management-google/zangara@main/Build";
         const loaderUrl = buildUrl + "/build.loader.js";
+
+        // jsDelivr 20 MB sınırı için bölünmüş Unity dosyaları.
+        // PowerShell kodu aşağıdaki isimlerle parça üretir:
+        // build.data.br.part1 ... build.data.br.part3
+        // build.wasm.br.part1 ... build.wasm.br.part6
+        const splitDataParts = [
+            buildUrl + "/build.data.br.part1",
+            buildUrl + "/build.data.br.part2",
+            buildUrl + "/build.data.br.part3"
+        ];
+
+        const splitWasmParts = [
+            buildUrl + "/build.wasm.br.part1",
+            buildUrl + "/build.wasm.br.part2",
+            buildUrl + "/build.wasm.br.part3",
+            buildUrl + "/build.wasm.br.part4",
+            buildUrl + "/build.wasm.br.part5",
+            buildUrl + "/build.wasm.br.part6"
+        ];
+
         const config = {
-            dataUrl: buildUrl + "/build.data.br",
+            dataUrl: null,
             frameworkUrl: buildUrl + "/build.framework.js",
-            codeUrl: buildUrl + "/build.wasm.br",
-        streamingAssetsUrl: "StreamingAssets",
+            codeUrl: null,
+            streamingAssetsUrl: "https://cdn.jsdelivr.net/gh/school-management-google/zangara@main/StreamingAssets",
             companyName: "varlamov5264",
             productName: "Your Life",
             productVersion: "1.14.4"
         };
+
+        async function FetchAndMergeParts(partUrls, mimeType, label, progressStart, progressEnd) {
+            const buffers = [];
+            let loadedCount = 0;
+
+            for (const partUrl of partUrls) {
+                const response = await fetch(partUrl, { cache: "force-cache" });
+                if (!response.ok) {
+                    throw new Error(label + " part yüklenemedi: " + partUrl + " HTTP " + response.status);
+                }
+
+                buffers.push(await response.arrayBuffer());
+                loadedCount++;
+
+                if (progressBarEmpty && progressBarFull) {
+                    spinner.style.display = "none";
+                    progressBarEmpty.style.display = "";
+                    const ratio = loadedCount / partUrls.length;
+                    const percent = progressStart + ((progressEnd - progressStart) * ratio);
+                    progressBarFull.style.width = percent + "%";
+                }
+            }
+
+            return URL.createObjectURL(new Blob(buffers, { type: mimeType }));
+        }
+
+        async function PrepareSplitUnityFiles() {
+            // .br dosyaları zaten sıkıştırılmıştır. Blob MIME type octet-stream bırakılıyor;
+            // Unity loader dosya içeriğini normal şekilde okuyacaktır.
+            config.dataUrl = await FetchAndMergeParts(splitDataParts, "application/octet-stream", "DATA", 5, 35);
+            config.codeUrl = await FetchAndMergeParts(splitWasmParts, "application/wasm", "WASM", 35, 75);
+        }
 
         const container = document.querySelector("#unity-container");
         const canvas = document.querySelector("#unity-canvas");
@@ -222,7 +279,7 @@
 
         // The background image when loading the game. When building a build, the code changes depending on the project settings.
         var backgroundUnity = "url('" + buildUrl + "/build.jpg') center / cover";
-        loadingCover.style.background = "url('Images/background.jpg') center / cover";
+        loadingCover.style.background = "url('https://cdn.jsdelivr.net/gh/school-management-google/zangara@main/Images/background.jpg') center / cover";
         loadingCover.style.display = "";
 
         let StartUnityInstance;
@@ -313,20 +370,30 @@
         const script = document.createElement("script");
         script.src = loaderUrl;
         script.onload = () => {
-            StartUnityInstance = function () {
-                createUnityInstance(canvas, config, (progress) => {
-                    spinner.style.display = "none";
-                    progressBarEmpty.style.display = "";
-                    const adjustedProgress = Math.max(progress, 0.05);
-                    progressBarFull.style.width = `${100 * adjustedProgress}%`;
-                }).then((unityInstance) => {
-                    ygGameInstance = unityInstance;
-                    loadingCover.style.background = "";
-                    loadingCover.style.display = "none";
-                    // Fill Background [Build Modify]
-                }).catch((message) => {
-                    console.error(message);
-                });
+            StartUnityInstance = async function () {
+                try {
+                    if (!config.dataUrl || !config.codeUrl) {
+                        await PrepareSplitUnityFiles();
+                    }
+
+                    createUnityInstance(canvas, config, (progress) => {
+                        spinner.style.display = "none";
+                        progressBarEmpty.style.display = "";
+                        const adjustedProgress = Math.max(progress, 0.05);
+                        progressBarFull.style.width = `${75 + (25 * adjustedProgress)}%`;
+                    }).then((unityInstance) => {
+                        ygGameInstance = unityInstance;
+                        loadingCover.style.background = "";
+                        loadingCover.style.display = "none";
+                        // Fill Background [Build Modify]
+                    }).catch((message) => {
+                        console.error(message);
+                    });
+                } catch (e) {
+                    console.error("Split Unity files could not be loaded:", e);
+                    if (spinner) spinner.style.display = "none";
+                    if (progressBarEmpty) progressBarEmpty.style.display = "";
+                }
             };
             
             InstallBlurFocusBlocker();
@@ -977,5 +1044,168 @@ function OpenAuthDialog() {
 
         document.body.appendChild(script);
     </script>
+    
+    <!-- Sticky Bottom Center Ad (728x90) with Smooth Slide-Out and Reappearance -->
+<style>
+  /* Container: Bottom center, fixed, with overflow hidden */
+  #ad-container {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(728px, calc(100% - 20px)); /* 728px, 10px margin on mobile */
+    height: 90px;
+    background: rgba(0, 0, 0, 0.90);
+    display: none;
+    z-index: 99999;
+    border-radius: 0; /* Sharp corners */
+    overflow: hidden;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.45);
+    box-sizing: border-box;
+    transition: transform 0.5s ease-in-out; /* Smooth slide-in/out animation */
+  }
+
+  /* Slide-out animation */
+  #ad-container.hidden {
+    transform: translate(-50%, 100%); /* Slide down out of view */
+  }
+
+  #ad-iframe {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 745px; /* Updated width */
+    height: 90px; /* Updated height */
+    border: 0;
+    display: block;
+    overflow: hidden;
+    pointer-events: auto;
+    box-sizing: content-box;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  #ad-iframe::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Close button with arrow */
+  #close-ad {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: #ff4d4d;
+    color: #fff;
+    border: none;
+    padding: 5px 9px;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: not-allowed;
+    opacity: 0.72;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+  }
+  #close-ad.enabled {
+    cursor: pointer;
+    opacity: 1;
+  }
+  #close-ad::before {
+    content: '↓'; /* Down arrow for bottom ad */
+    margin-right: 4px;
+  }
+
+  /* Right mask for scrollbar */
+  #ad-right-mask {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 12px;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.9));
+    z-index: 99999;
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 440px) {
+    #ad-container {
+      width: calc(100% - 12px);
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: 0; /* Sharp corners on mobile */
+    }
+    #ad-iframe {
+      width: 728px;
+    }
+  }
+</style>
+
+<div id="ad-container" aria-hidden="true" role="dialog" aria-label="Advertisement">
+  <iframe
+    id="ad-iframe"
+    src="https://script.google.com/macros/s/AKfycbyLqfuYNg4HqY0inO1-UyYb5pVvsb0FDxHj6mw418ypqPmoNzUgt0McBC9Q9JfLfFp39Q/exec"
+    width="768px"
+    height="95px"
+    scrolling="no"
+    frameborder="0"
+    sandbox="allow-scripts allow-popups allow-same-origin"
+  ></iframe>
+  <button id="close-ad" disabled>Close (12)</button>
+  <div id="ad-right-mask"></div>
+</div>
+
+<script>
+  (function () {
+    const showDelay = 2000; // 2 seconds delay before first show
+    const countdownStart = 12; // 12 seconds countdown
+    const reappearDelay = 150000; // 25 seconds before reappearance
+    const adContainer = document.getElementById('ad-container');
+    const closeBtn = document.getElementById('close-ad');
+
+    function showAd() {
+      // Show ad with smooth slide-in
+      adContainer.style.display = 'block';
+      adContainer.classList.remove('hidden');
+      adContainer.setAttribute('aria-hidden', 'false');
+
+      // Start countdown
+      let timeLeft = countdownStart;
+      closeBtn.textContent = `Close (${timeLeft})`;
+      closeBtn.disabled = true;
+      closeBtn.classList.remove('enabled');
+
+      const t = setInterval(() => {
+        timeLeft--;
+        if (timeLeft > 0) {
+          closeBtn.textContent = `Close (${timeLeft})`;
+        } else {
+          clearInterval(t);
+          closeBtn.disabled = false;
+          closeBtn.classList.add('enabled');
+          closeBtn.textContent = 'Close ↓';
+        }
+      }, 1000);
+    }
+
+    // Initial ad show
+    setTimeout(showAd, showDelay);
+
+    // Close with animation and schedule reappearance
+    closeBtn.addEventListener('click', () => {
+      if (closeBtn.disabled) return;
+      adContainer.classList.add('hidden');
+      adContainer.setAttribute('aria-hidden', 'true');
+      // Schedule reappearance without removing or reloading iframe
+      setTimeout(showAd, reappearDelay);
+    });
+  })();
+</script>
 </body>
 </html>
+
+]]></Content>
+</Module>
